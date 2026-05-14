@@ -62,6 +62,17 @@ If any step fails, fix the root cause. Do not paper over by disabling checks, ra
 
 To exercise the watchdog logic itself without touching the relay: SSH to the router, edit `/etc/ont-watchdog.conf` to point `TASMOTA_IP` at a non-routable address, run the script, observe it taking the "Tasmota unreachable" branch, then re-deploy to restore. Revert state with `rm /tmp/ont-watchdog.state`.
 
+## Debugging
+
+When diagnosing user-reported issues, read `README.md > Debugging` first — it has the symptom→check table, the log line glossary, and the state file format. Two go-to commands:
+
+```sh
+ssh root@10.20.30.1 'logread -e ont-watchdog | tail -30; echo ---; cat /tmp/ont-watchdog.state'
+curl -s 'http://10.20.30.15/cm?cmnd=Status%201' | python3 -m json.tool | grep -E 'Boot|Restart|Uptime'
+```
+
+If a `BootCount` is climbing, Tasmota itself is rebooting — that's a power/WiFi-signal issue, not a logic bug, and no script change in this repo will fix it.
+
 ## When in doubt
 
 The user prefers a short proposal and a confirmation over a large autonomous change. If a change would touch more than one of: cron cadence, cooldown semantics, Tasmota settings, or the deploy contract — propose the diff in the conversation first.
