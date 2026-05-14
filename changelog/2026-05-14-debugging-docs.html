@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debugging docs — tasmota-bridge changelog</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a href="index.html">← back to changelog</a>
+  </header>
+
+  <article class="entry">
+    <header>
+      <h1>Added Debugging section to README and agent pointer in AGENTS.md</h1>
+      <p class="meta">
+        <span class="tag docs">docs</span>
+        2026-05-14 &middot; commit <code>b2f8fdb</code>
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>Why</h2>
+      <p>The repo had end-to-end deploy + verify, but if something went wrong post-deploy there was no documented place for the user or a future agent to start. Without a single "where do I look first" reference, every troubleshooting session would have to rediscover the log locations, state file format, and command incantations.</p>
+    </section>
+
+    <section class="section">
+      <h2>What changed</h2>
+      <ul>
+        <li><code>README.md</code> — new <em>Debugging</em> section. Six subsections:
+          <ul>
+            <li>Where to look first (<code>logread -e ont-watchdog</code>, cron-firing check, state file, active config).</li>
+            <li>Tasmota inspection commands (Status 0/1/5, BootCount tracking, web log endpoint).</li>
+            <li>Log line glossary — table mapping every <code>ont-watchdog:</code> message to its meaning.</li>
+            <li>State file format reference.</li>
+            <li>Symptom → check table for 8 common failure modes.</li>
+            <li>Forcing scenarios for testing (manual power cycle, state reset, dry-run, blackhole simulation).</li>
+            <li>Log retention caveat — <code>logread</code> is in-RAM.</li>
+          </ul>
+        </li>
+        <li><code>AGENTS.md</code> — added a <em>Debugging</em> primer pointing back to README with two go-to commands. Surfaces the note that climbing <code>BootCount</code> is a power/signal issue, not a logic bug.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Verification</h2>
+      <p>Docs-only change; no deploy, no behavior modification. Reviewed rendered Markdown for table alignment.</p>
+    </section>
+  </article>
+
+  <footer class="entry-foot">
+    <a href="index.html">← back to changelog</a>
+  </footer>
+</body>
+</html>

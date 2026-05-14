@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenWRT WiFi fix — tasmota-bridge changelog</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a href="index.html">← back to changelog</a>
+  </header>
+
+  <article class="entry">
+    <header>
+      <h1>OpenWRT WiFi: re-paired SSIDs to the real radio, set country=IN, pinned 5GHz non-DFS</h1>
+      <p class="meta">
+        <span class="tag ops">ops</span>
+        2026-05-14 &middot; router-side change (no repo commit)
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>Symptom</h2>
+      <p>User reported that the OpenWRT router (<code>10.20.30.1</code>) was not broadcasting any WiFi. Neither <code>Minion</code> (2.4&nbsp;GHz) nor <code>Minion_5G</code> (5&nbsp;GHz) was visible.</p>
+    </section>
+
+    <section class="section">
+      <h2>Root cause</h2>
+      <p>The wireless config had its SSIDs attached to phantom radios while the real card sat idle under a disabled section:</p>
+      <table>
+        <tr><th>UCI section</th><th>Path in config</th><th>Reality</th></tr>
+        <tr><td><code>radio0</code> / <code>radio1</code> (enabled, SSID Minion / Minion_5G)</td><td><code>0000:02:00.0</code></td><td>Empty slot. Kernel logs: <code>pcie0 no card, disable it</code>.</td></tr>
+        <tr><td><code>radio2</code> / <code>radio3</code> (disabled, SSID OpenWrt, no encryption)</td><td><code>0000:01:00.0</code></td><td>The actual <code>mt7915e</code> card. Confirmed via <code>readlink /sys/class/ieee80211/phy0/device</code>.</td></tr>
+      </table>
+      <p>Netifd's response: <code>Could not find PHY for device 'radio0' &middot; Could not find PHY for device 'radio1'</code> followed by <code>Wireless device 'radio0' setup failed</code>. The card was healthy, the kernel had detected it, the config just pointed elsewhere.</p>
+      <p>Additionally, regulatory was unset (<code>country 00</code>, world), which capped TX power and explained the <code>txpower 3.00 dBm</code> visible on the stranded managed-mode interfaces.</p>
+    </section>
+
+    <section class="section">
+      <h2>Fix</h2>
+      <p>All changes via <code>uci</code> on the router, committed atomically; <code>/etc/config/wireless</code> backed up first to <code>/etc/config/wireless.bak-20260514-160840</code>.</p>
+      <pre><code># Backup
+cp /etc/config/wireless /etc/config/wireless.bak-$(date +%Y%m%d-%H%M%S)
+
+# Re-path the enabled radios to the real card
+uci set wireless.radio0.path='1e140000.pcie/pci0000:00/0000:00:01.0/0000:01:00.0'
+uci set wireless.radio1.path='1e140000.pcie/pci0000:00/0000:00:01.0/0000:01:00.0+1'
+
+# Set regulatory domain
+uci set wireless.radio0.country='IN'
+uci set wireless.radio1.country='IN'
+
+# Remove the now-redundant disabled radio2 / radio3 sections
+uci delete wireless.default_radio2
+uci delete wireless.radio2
+uci delete wireless.default_radio3
+uci delete wireless.radio3
+
+uci commit wireless
+wifi reload</code></pre>
+      <p>After reload, 2.4&nbsp;GHz came up cleanly on channel 1. The 5&nbsp;GHz radio ran ACS, selected DFS channel 56, then the mt7915e driver's <code>start_dfs_cac()</code> failed and hostapd disabled the AP. Fixed by pinning to a non-DFS channel in UNII-1:</p>
+      <pre><code>uci set wireless.radio1.channel='36'
+uci commit wireless
+wifi reload</code></pre>
+    </section>
+
+    <section class="section">
+      <h2>Final state</h2>
+      <table>
+        <tr><th>SSID</th><th>Band</th><th>Channel</th><th>Width</th><th>TX power</th><th>State</th></tr>
+        <tr><td>Minion</td><td>2.4&nbsp;GHz</td><td>1</td><td>20&nbsp;MHz</td><td>26&nbsp;dBm</td><td>AP-ENABLED</td></tr>
+        <tr><td>Minion_5G</td><td>5&nbsp;GHz</td><td>36</td><td>VHT80</td><td>26&nbsp;dBm</td><td>AP-ENABLED</td></tr>
+      </table>
+      <p>A station was already associated on 5&nbsp;GHz shortly after reload. The Tasmota at <code>10.20.30.15</code> reconnected (incidentally to a different AP also broadcasting Minion — the home network is mesh/multi-AP, which is a useful resilience property to know about for the watchdog story).</p>
+    </section>
+
+    <section class="section">
+      <h2>Lessons for the watchdog</h2>
+      <ul>
+        <li>"Tasmota offline" can mean the AP it associates to went down, not Tasmota itself. The watchdog's Tasmota-reachability guard correctly short-circuits in this case.</li>
+        <li>Tasmota's mesh-driven re-association means we don't strictly need Tasmota on the OpenWRT's own SSID for the watchdog to keep working — useful when relocating the AP.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Rollback</h2>
+      <pre><code>ssh root@10.20.30.1 'cp /etc/config/wireless.bak-20260514-160840 /etc/config/wireless && wifi reload'</code></pre>
+    </section>
+  </article>
+
+  <footer class="entry-foot">
+    <a href="index.html">← back to changelog</a>
+  </footer>
+</body>
+</html>

@@ -62,6 +62,26 @@ If any step fails, fix the root cause. Do not paper over by disabling checks, ra
 
 To exercise the watchdog logic itself without touching the relay: SSH to the router, edit `/etc/ont-watchdog.conf` to point `TASMOTA_IP` at a non-routable address, run the script, observe it taking the "Tasmota unreachable" branch, then re-deploy to restore. Revert state with `rm /tmp/ont-watchdog.state`.
 
+## Changelog
+
+Every non-trivial change must be logged in `changelog/` *in the same commit* that makes the change. This includes:
+
+- Code or config changes in this repo.
+- Router-side changes (`/etc/config/*`, crontab, scripts under `/root/`).
+- Tasmota setting changes that aren't already captured by `tasmota/apply-config.sh`.
+
+A "non-trivial change" means anything someone might need to look up later — i.e. anything that would be worth grepping the changelog for. A typo fix in a comment is trivial; a knob tweak in `config.env` is not.
+
+To add an entry:
+
+1. Copy any file in `changelog/` whose name matches `YYYY-MM-DD-*.html` as a template.
+2. Rename it to `YYYY-MM-DD-short-slug.html` (today's date in UTC, kebab-case slug).
+3. Fill in: title, tag (`feat` / `fix` / `docs` / `ops`), one-paragraph *why*, *what changed* (file paths + commands), and *verification*. If the change touches live infrastructure, include a *rollback* section.
+4. Prepend a new `<li>` to the list in `changelog/index.html`.
+5. Stage both files alongside the change they describe; commit together.
+
+If you can't think of what to write under *verification*, you probably didn't verify the change — fix that before committing.
+
 ## Debugging
 
 When diagnosing user-reported issues, read `README.md > Debugging` first — it has the symptom→check table, the log line glossary, and the state file format. Two go-to commands:

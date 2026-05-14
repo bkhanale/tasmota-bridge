@@ -37,6 +37,7 @@ $EDITOR config.env
 | `router/ont-watchdog.sh`     | The cron script that lives at `/root/` on the OpenWRT box.    |
 | `tasmota/apply-config.sh`    | One-shot HTTP calls to harden Tasmota settings.               |
 | `AGENTS.md` / `CLAUDE.md`    | Contract for AI agents working in this repo.                  |
+| `changelog/`                 | Running record of changes (open `changelog/index.html`).      |
 
 ## Common operations
 
