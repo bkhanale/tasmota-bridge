@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WiFi MAC binding fix — tasmota-bridge changelog</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a href="index.html">← back to changelog</a>
+  </header>
+
+  <article class="entry">
+    <header>
+      <h1>OpenWRT WiFi: switched from path-based to MAC-based radio binding (survives PCI re-enumeration)</h1>
+      <p class="meta">
+        <span class="tag fix">fix</span>
+        2026-05-24 &middot; router-side change (no repo commit)
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>Symptom</h2>
+      <p>User reported "the wireless signal is not there" again. Same surface symptom as the <a href="2026-05-14-openwrt-wifi-fix.html">2026-05-14 fix</a>: Minion / Minion_5G not broadcasting, netifd logging <code>Could not find PHY for device 'radio0'</code>.</p>
+    </section>
+
+    <section class="section">
+      <h2>Root cause (different from last time)</h2>
+      <p>The PCI bus number assigned to the <code>mt7915e</code> card is non-deterministic on mt7621-pci across reboots:</p>
+      <table>
+        <tr><th>Boot</th><th>Card located at</th><th>Our <code>radio0.path</code></th><th>Result</th></tr>
+        <tr><td>2026-05-14 evening</td><td><code>0000:01:00.0</code></td><td><code>0000:01:00.0</code></td><td>✅ worked</td></tr>
+        <tr><td>2026-05-24 morning</td><td><code>0000:02:00.0</code></td><td><code>0000:01:00.0</code></td><td>❌ "Could not find PHY"</td></tr>
+      </table>
+      <p>The previous fix's path-based binding latched onto wherever the card happened to be on that boot. It was correct in the moment but inherently fragile — any reboot could flip pcie0 / pcie1 / pcie2 enumeration ordering and break it again. OpenWRT also helpfully auto-regenerated <code>radio2</code> / <code>radio3</code> sections on this reboot because the original UCI sections no longer matched any present device, adding clutter.</p>
+      <p>Side effect: with both radios in <code>retry_setup_failed</code>, the country code (<code>IN</code>) couldn't be applied either, and <code>iw reg get</code> showed <code>country 00</code> (world) — explaining why everything we tried looked back at square one.</p>
+    </section>
+
+    <section class="section">
+      <h2>Fix</h2>
+      <p>Bind by the PHY's permanent MAC address instead of by udev path. MACs are baked into the card's EEPROM and don't move across boots:</p>
+      <pre><code># Per-phy permanent MACs (from /sys/class/ieee80211/phyN/macaddress)
+#   phy0 (2.4 GHz only) → 3c:52:a1:24:94:af
+#   phy1 (5 GHz only)   → 3c:52:a1:24:94:ae
+
+cp /etc/config/wireless /etc/config/wireless.bak-$(date +%Y%m%d-%H%M%S)
+
+uci delete wireless.radio0.path
+uci delete wireless.radio1.path
+uci set wireless.radio0.macaddr='3c:52:a1:24:94:af'
+uci set wireless.radio1.macaddr='3c:52:a1:24:94:ae'
+
+# Remove the auto-regenerated phantom radios
+uci delete wireless.default_radio2; uci delete wireless.radio2
+uci delete wireless.default_radio3; uci delete wireless.radio3
+
+uci commit wireless
+wifi reload</code></pre>
+    </section>
+
+    <section class="section">
+      <h2>Final state</h2>
+      <table>
+        <tr><th>SSID</th><th>Band</th><th>Channel</th><th>Width</th><th>TX power</th><th>State</th></tr>
+        <tr><td>Minion</td><td>2.4 GHz</td><td>1 (ACS)</td><td>20 MHz HE20</td><td>26 dBm</td><td>AP-ENABLED</td></tr>
+        <tr><td>Minion_5G</td><td>5 GHz</td><td>36 (pinned non-DFS)</td><td>VHT80</td><td>26 dBm</td><td>AP-ENABLED</td></tr>
+      </table>
+      <p>Country regulatory: <code>IN</code> active.</p>
+    </section>
+
+    <section class="section">
+      <h2>Why this won't recur</h2>
+      <p>OpenWRT's <code>wifi-device</code> matching checks <code>macaddr</code> against the PHY's permanent address at startup. That value comes from the card's EEPROM (<code>/sys/class/ieee80211/phyN/macaddress</code>), not from PCI enumeration order, so the binding is stable regardless of which bus number the card lands on.</p>
+      <p>A related secondary benefit: with macaddr binding in place, OpenWRT's wifi-detect will not auto-regenerate phantom <code>radio2</code>/<code>radio3</code> sections on future boots because the existing <code>radio0</code>/<code>radio1</code> will always match.</p>
+    </section>
+
+    <section class="section">
+      <h2>Verification</h2>
+      <p>Verified the fix on this boot. A full PCI-re-enumeration test (reboot the router and confirm WiFi returns without intervention) is left as an explicit follow-up; the user opted not to do that during the active session to avoid an unplanned outage. If it ever recurs, the entire diagnosis is reproducible via the three commands at the top of this entry.</p>
+    </section>
+
+    <section class="section">
+      <h2>Rollback</h2>
+      <pre><code>ssh root@10.20.30.1 'cp /etc/config/wireless.bak-20260524-081311 /etc/config/wireless && wifi reload'</code></pre>
+      <p>(Rolls back to the earlier path-based config. Not recommended — the path-based config is exactly what just broke.)</p>
+    </section>
+  </article>
+
+  <footer class="entry-foot">
+    <a href="index.html">← back to changelog</a>
+  </footer>
+</body>
+</html>
