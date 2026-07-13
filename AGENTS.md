@@ -39,7 +39,9 @@ If any step fails, fix the root cause. Do not paper over by disabling checks, ra
 
 - `/root/ont-watchdog.sh` — the script (managed; do not hand-edit)
 - `/etc/ont-watchdog.conf` — rendered from `config.env` by `deploy.sh`
-- `/tmp/ont-watchdog.state` — runtime state (fail count, last action, attempt window). Safe to delete.
+- `/tmp/ont-watchdog.state` — runtime state (fail count, last action, attempt window). It is safe to delete; the persistent action backup will preserve cooldown/backoff.
+- `/root/ont-watchdog.action-state` — persistent action-only backup; delete with the runtime state to fully reset backoff.
+- `/root/ont-watchdog-events.log` — bounded durable audit history (plus `.1`–`.3` rotations).
 - `crontab -l` — should contain exactly one `ont-watchdog` line at `* * * * *`
 
 ## Tasmota notes
@@ -88,6 +90,7 @@ When diagnosing user-reported issues, read `README.md > Debugging` first — it 
 
 ```sh
 ssh root@10.20.30.1 'logread -e ont-watchdog | tail -30; echo ---; cat /tmp/ont-watchdog.state'
+./status.sh
 curl -s 'http://10.20.30.15/cm?cmnd=Status%201' | python3 -m json.tool | grep -E 'Boot|Restart|Uptime'
 ```
 

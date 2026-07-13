@@ -77,6 +77,9 @@ ssh root@10.20.30.1 'rm -f /tmp/ont-watchdog.state'
 ### Where to look first
 
 ```sh
+# Complete read-only snapshot: relay, cron, state, and durable recent events
+./status.sh
+
 # Recent watchdog decisions (last 30 lines) — start here for any "did it act?" question
 ssh root@10.20.30.1 'logread -e ont-watchdog | tail -30'
 
@@ -88,6 +91,9 @@ ssh root@10.20.30.1 'logread | grep "ont-watchdog.sh" | tail -10'
 
 # Current runtime state on the router
 ssh root@10.20.30.1 'cat /tmp/ont-watchdog.state'
+
+# Durable, event-only history (bounded to about 128 KiB including rotations)
+ssh root@10.20.30.1 'tail -30 /root/ont-watchdog-events.log'
 
 # Active config the router is using (rendered by last deploy)
 ssh root@10.20.30.1 'cat /etc/ont-watchdog.conf'
@@ -127,6 +133,7 @@ Each cron run produces zero or more `ont-watchdog:` lines tagged via `logger`. P
 | `Tasmota at IP unreachable; skipping toggle`          | Watchdog refused to toggle because Tasmota wouldn't respond. No deadlock.|
 | `power-cycling ONT via Tasmota ...`                   | About to flip the relay.                                                 |
 | `power cycle complete; next attempt allowed in Xs`    | Done. State updated, cooldown armed.                                     |
+| `runtime state missing; restored ... persistent backup` | `/tmp` was cleared; action cooldown/backoff was safely restored.       |
 
 ### State file format
 
@@ -139,7 +146,13 @@ attempt_count=1         # power-cycles inside the current 1-hour window
 attempt_window_start=...# unix ts when this rolling-hour window opened
 ```
 
-Safe to delete at any time (`rm /tmp/ont-watchdog.state`) — it'll be recreated on the next cron run with a clean slate.
+It is recreated after router reboot because `/tmp` is tmpfs. After every completed power cycle, the cooldown and hourly-attempt fields are also backed up to `/root/ont-watchdog.action-state`. This prevents a lost runtime state from bypassing backoff and causing an early repeat cycle.
+
+To deliberately reset all watchdog state, remove both files:
+
+```sh
+ssh root@10.20.30.1 'rm -f /tmp/ont-watchdog.state /root/ont-watchdog.action-state'
+```
 
 ### Symptom → check
 
@@ -147,7 +160,7 @@ Safe to delete at any time (`rm /tmp/ont-watchdog.state`) — it'll be recreated
 | ---------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Internet is down, watchdog never acted               | `logread -e ont-watchdog` — is it logging `WAN DOWN`? If not, the ping targets are reachable somehow (DNS-only failure?). |
 | Watchdog acted but ONT didn't come back              | `Status 1` on Tasmota — did the relay actually flip? Check ONT mains LED.       |
-| ONT got toggled multiple times in quick succession   | Should not happen with this script. Check `/tmp/ont-watchdog.state` and the log — if you see it, file it as a bug. |
+| ONT got toggled multiple times in quick succession   | Check `./status.sh`; it shows both the tmpfs state and persistent action backup. |
 | Tasmota offline / unpingable                         | `ping 10.20.30.15`. If down, check the AP. RSSI -83 dBm is borderline — relocating helps more than software. |
 | Tasmota `BootCount` climbing                         | The Tasmota itself is rebooting (power glitch from relay or weak WiFi). `SetOption65 1` already protects WiFi creds, but the reboots themselves want a closer AP. |
 | Cron not firing at all                               | `ps | grep crond` should show one. `crontab -l` must contain the `ont-watchdog.sh` line. |
@@ -162,7 +175,7 @@ curl 'http://10.20.30.15/cm?cmnd=Power%20Off' && sleep 15 \
   && curl 'http://10.20.30.15/cm?cmnd=Power%20On'
 
 # Reset watchdog state — clears fail count, cooldown, hourly attempt count
-ssh root@10.20.30.1 'rm -f /tmp/ont-watchdog.state'
+ssh root@10.20.30.1 'rm -f /tmp/ont-watchdog.state /root/ont-watchdog.action-state'
 
 # Dry-run the watchdog once (without waiting for cron)
 ssh root@10.20.30.1 '/root/ont-watchdog.sh'
@@ -173,14 +186,14 @@ ssh root@10.20.30.1 '/root/ont-watchdog.sh'
 ssh root@10.20.30.1 '
   cp /etc/ont-watchdog.conf /tmp/conf.bak
   printf "PING_TARGETS=\"192.0.2.1\"\nTASMOTA_IP=\"192.0.2.42\"\n" >> /etc/ont-watchdog.conf
-  rm -f /tmp/ont-watchdog.state
+  rm -f /tmp/ont-watchdog.state /root/ont-watchdog.action-state
   for i in 1 2 3; do /root/ont-watchdog.sh; done
   logread -e ont-watchdog | tail -5
   mv /tmp/conf.bak /etc/ont-watchdog.conf
-  rm -f /tmp/ont-watchdog.state
+  rm -f /tmp/ont-watchdog.state /root/ont-watchdog.action-state
 '
 ```
 
 ### Log retention
 
-OpenWRT's `logread` is a ring buffer in RAM (default 64 KiB). Reboots wipe it, and busy periods evict old entries. If you need durable history, configure `system.@system[0].log_file` to point at `/root/syslog.log` (survives reboot, eats flash) — but the watchdog is chatty enough that grepping `logread` in the moment is usually sufficient.
+OpenWRT's `logread` is a 64 KiB ring buffer in RAM. It is overwritten as it fills and wiped by reboot; it is not persisted or traditionally rotated to disk. The watchdog now keeps its own durable, event-only audit log at `/root/ont-watchdog-events.log`, rotated at 32 KiB with three previous generations retained (about 128 KiB maximum). It records outage starts, power-cycle actions, recovery, and runtime-state restoration—not every cron run—so it remains useful without continuous flash writes.

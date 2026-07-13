@@ -33,12 +33,14 @@ echo "==> Copying files to ${ROUTER_SSH}"
 # -O = legacy SCP protocol. OpenWRT's dropbear lacks sftp-server, which is
 # what modern OpenSSH scp negotiates by default.
 scp -O -q router/ont-watchdog.sh "${ROUTER_SSH}:/root/ont-watchdog.sh"
+scp -O -q router/ont-watchdog-status.sh "${ROUTER_SSH}:/root/ont-watchdog-status.sh"
 scp -O -q "$TMPCONF"             "${ROUTER_SSH}:/etc/ont-watchdog.conf"
 
 echo "==> Installing cron + cleaning old artifacts"
 ssh "$ROUTER_SSH" '
   set -eu
   chmod +x /root/ont-watchdog.sh
+  chmod +x /root/ont-watchdog-status.sh
 
   # Remove any previous-generation scripts and state
   rm -f /root/ont-watchdog-simple.sh /root/ont-autoreboot.sh

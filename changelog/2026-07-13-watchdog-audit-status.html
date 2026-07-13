@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Watchdog durable audit and status — tasmota-bridge changelog</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <a href="index.html">← back to changelog</a>
+  </header>
+
+  <article class="entry">
+    <header>
+      <h1>Added durable watchdog event audit, action-state recovery, and status snapshot</h1>
+      <p class="meta">
+        <span class="tag fix">fix</span>
+        2026-07-13
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>Why</h2>
+      <p>A recent WAN outage confirmed the watchdog could recover service, but the detailed evidence lived only in OpenWrt&rsquo;s small in-RAM log buffer. It also exposed that losing the tmpfs runtime state could discard the action counter and allow a repeat cycle before the intended escalating backoff.</p>
+    </section>
+
+    <section class="section">
+      <h2>What changed</h2>
+      <ul>
+        <li><code>router/ont-watchdog.sh</code> now keeps a bounded, event-only audit at <code>/root/ont-watchdog-events.log</code>, rotating at 32 KiB with three previous generations. It records outage starts, actions, recovery, and runtime-state restoration, not ordinary minute runs.</li>
+        <li>Completed action timing is backed up to <code>/root/ont-watchdog.action-state</code>. If <code>/tmp/ont-watchdog.state</code> is missing, the watchdog restores cooldown and rate-limit information before deciding whether it may cycle again.</li>
+        <li><code>status.sh</code> and deployed <code>/root/ont-watchdog-status.sh</code> provide a read-only snapshot of relay state, cron, both state files, and recent durable events.</li>
+        <li><code>deploy.sh</code>, <code>verify.sh</code>, <code>README.md</code>, and <code>AGENTS.md</code> deploy, verify, and document the new operational surfaces.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Verification</h2>
+      <p>Ran shell syntax and whitespace checks, deployed with <code>./deploy.sh</code>, ran the end-to-end verifier, and observed a subsequent scheduled cron invocation. The status helper was included in deployment verification.</p>
+    </section>
+
+    <section class="section">
+      <h2>Rollback</h2>
+      <p>Revert this commit and run <code>./deploy.sh</code>. Optionally remove <code>/root/ont-watchdog-events.log*</code> and <code>/root/ont-watchdog.action-state</code> from the router afterward.</p>
+    </section>
+  </article>
+
+  <footer class="entry-foot">
+    <a href="index.html">← back to changelog</a>
+  </footer>
+</body>
+</html>

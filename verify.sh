@@ -45,6 +45,7 @@ echo "==> Verify OpenWRT router (${ROUTER_SSH})"
 ssh "$ROUTER_SSH" '
   set -e
   [ -x /root/ont-watchdog.sh ]           || { echo "watchdog missing or not executable"; exit 1; }
+  [ -x /root/ont-watchdog-status.sh ]    || { echo "status helper missing or not executable"; exit 1; }
   [ -f /etc/ont-watchdog.conf ]          || { echo "config missing"; exit 1; }
   crontab -l | grep -q "/root/ont-watchdog.sh" || { echo "cron entry missing"; exit 1; }
   # Old artifacts must be gone
@@ -52,6 +53,10 @@ ssh "$ROUTER_SSH" '
   [ ! -e /root/ont-autoreboot.sh ]       || { echo "stale ont-autoreboot.sh still present"; exit 1; }
 ' && pass "router has script, config, cron entry; old artifacts cleaned" \
   || fail "router-side check failed"
+
+ssh "$ROUTER_SSH" '/root/ont-watchdog-status.sh >/dev/null' \
+  && pass "router status helper runs" \
+  || fail "router status helper failed"
 
 echo "==> Dry-run watchdog on router (current internet state)"
 ssh "$ROUTER_SSH" 'sh /root/ont-watchdog.sh' || fail "watchdog script errored"
